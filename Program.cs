@@ -35,9 +35,6 @@ namespace WebCrawler
 
                 GetProduct();
 
-                var htmlContent = FetchHtmlContent(url);
-
-                //ParseHtml(htmlContent);
             }
             catch (Exception ex)
             {
@@ -47,38 +44,40 @@ namespace WebCrawler
 
         private static void GetProduct()
         {
+            string sqlconnectStr = "Data Source=192.168.59.146,1433;Initial Catalog=BookStore;User ID=sa;Password=Qaz@1234;TrustServerCertificate=True";
 
+            string categoryLevel1Id = "950B36EE-1352-477A-BA58-8C2539D9A933";
+            string categoryLevel2Id = "4FD62C9D-0E18-423E-8BAC-78767900D25E";
 
-
-
-            string sqlconnectStr = "Data Source=192.168.59.204,1433;Initial Catalog=BookStore;User ID=sa;Password=Qaz@1234;TrustServerCertificate=True";
-
-
-            string categoryLevel1Id = "4ADCEE60-92E2-4705-AF33-D9257A1786EC";
-            string categoryLevel2Id = "DC75FB20-6EE6-4569-9C7D-C1D140C8A515";
-
-
-
-            var url = "https://www.fahasa.com/sach-trong-nuoc/thieu-nhi/truyen-thieu-nhi.html?order=num_orders&limit=24&p=1";
+            var url = "https://www.fahasa.com/sach-trong-nuoc/nuoi-day-con/cam-nang-lam-cha-me.html?order=num_orders&limit=24&p=1";
             HtmlWeb htmlWeb = new HtmlWeb();
             var htmlDoc = htmlWeb.Load(url);
 
-            var pageNumbers = htmlDoc.DocumentNode
-                                    .SelectNodes("//div[@id='pagination']//ol/li/a")
-                                    .Select(a => a.InnerText.Trim())
-                                    .Where(text => int.TryParse(text, out _))  // Lọc ra những số hợp lệ
-                                    .Select(int.Parse)
-                                    .ToList();
+            List<int> pageNumbers = new List<int>();
+            
+            if(htmlDoc.DocumentNode.SelectNodes("//div[@id='pagination']//ol/li/a") != null)
+            {
+                pageNumbers = htmlDoc.DocumentNode
+                                        .SelectNodes("//div[@id='pagination']//ol/li/a")
+                                        .Select(a => a.InnerText.Trim())
+                                        .Where(text => int.TryParse(text, out _))
+                                        .Select(int.Parse)
+                                        .ToList();
+            }
+            else
+            {
+                pageNumbers.Add(1);
+            }
 
             int lastPage = pageNumbers.Max();
 
-
             for (int i = 1; i <= lastPage; i++)
             {
-                var urlProdduct = "https://www.fahasa.com/sach-trong-nuoc/thieu-nhi/truyen-thieu-nhi.html?order=num_orders&limit=24&p=" + i;
+                StringBuilder sb = new StringBuilder("https://www.fahasa.com/sach-trong-nuoc/nuoi-day-con/cam-nang-lam-cha-me.html?order=num_orders&limit=24&p=");
+                var urlProdduct = sb.Append(i);
 
                 HtmlWeb htmlWebProduct = new HtmlWeb();
-                var htmlDocProduct = htmlWeb.Load(urlProdduct);
+                var htmlDocProduct = htmlWeb.Load(urlProdduct.ToString());
                 HtmlNodeCollection nodes = htmlDocProduct.DocumentNode.SelectNodes("//ul[@id='products_grid']/li");
 
                 foreach (HtmlNode node in nodes)
@@ -89,6 +88,7 @@ namespace WebCrawler
                     string productName;
                     if (productHtml.DocumentNode.SelectSingleNode(".//h1[@class='fhs_name_product_desktop']") != null)
                     {
+                        Guid productId = Guid.NewGuid();
                         var h1ProductNameElement = productHtml.DocumentNode.SelectSingleNode(".//h1[@class='fhs_name_product_desktop']");
 
                         // Lấy toàn bộ văn bản trong h1, bỏ qua phần tử con (div/a)
@@ -96,13 +96,14 @@ namespace WebCrawler
 
                         // Loại bỏ từ "Bộ" nếu có
                         productName = fullText.Replace("Bộ", "").Trim();
+                        Console.WriteLine(productName + " " + i);
 
                         string supplier = "";
                         if (productHtml.DocumentNode.SelectSingleNode(".//div[@class='product-view-sa-supplier']/a") != null)
                         {
                             supplier = productHtml.DocumentNode.SelectSingleNode(".//div[@class='product-view-sa-supplier']/a").InnerText.Trim();
                         }
-                        else
+                        else if(productHtml.DocumentNode.SelectSingleNode(".//div[@class='product-view-sa-supplier']/span[2]") != null)
                         {
                             supplier = productHtml.DocumentNode.SelectSingleNode(".//div[@class='product-view-sa-supplier']/span[2]").InnerText.Trim();
                         }
@@ -147,46 +148,142 @@ namespace WebCrawler
                             price = Int32.Parse(cleanedPrice);
                         }
 
-                        Console.WriteLine(price + " " + productName + " " + author + " " + supplier + " " + coverType);
 
                         HtmlNodeCollection productImgNodes = productHtml.DocumentNode.SelectNodes(".//div[@class='product-view-thumbnail']/div[@id='lightgallery-product-media']/a/img");
-                        List<string> imgUrl = new List<string>();
+                        List<string> imgUrls = new List<string>();
                         foreach (var imgNode in productImgNodes)
                         {
                             string urlImage = imgNode.GetAttributeValue("src", "");
-                            imgUrl.Add(urlImage);
+                            imgUrls.Add(urlImage);
+                        }
+
+                        HtmlNodeCollection productInforList = productHtml.DocumentNode.SelectNodes(".//div[@id='product_view_info']/div[@class='product_view_tab_content_ad']/div[@class='product_view_tab_content_additional']/table[@class='data-table table-additional']/tbody/tr");
+
+
+
+                        Int64 productWeight = 0, numberOfPages = 0;
+                        string size = "", age = "", publicationYear = "", language = "", translator = "";
+                        if (productInforList != null)
+                        {
+
+                            foreach (HtmlNode infor in productInforList)
+                            {
+                                HtmlNode thNode = infor.SelectSingleNode("./th");
+                                if (thNode.InnerText.Trim() == "Trọng lượng (gr)")
+                                {
+                                    HtmlNode tdNode = infor.SelectSingleNode("./td");
+                                    if (!string.IsNullOrWhiteSpace(tdNode.InnerText))
+                                    {
+                                        productWeight = Convert.ToInt64(tdNode.InnerText.Trim());
+                                    }
+                                }
+                                else if (thNode.InnerText.Trim() == "Kích Thước Bao Bì")
+                                {
+                                    size = infor.SelectSingleNode("./td").InnerText.Trim();
+                                }
+                                else if (thNode.InnerText.Trim() == "Độ Tuổi")
+                                {
+                                    age = infor.SelectSingleNode("./td").InnerText.Trim();
+                                }
+                                else if (thNode.InnerText.Trim() == "Năm XB")
+                                {
+                                    publicationYear = infor.SelectSingleNode("./td").InnerText.Trim();
+                                }
+                                else if (thNode.InnerText.Trim() == "Ngôn Ngữ")
+                                {
+                                    language = infor.SelectSingleNode("./td").InnerText.Trim();
+                                }
+                                else if (thNode.InnerText.Trim() == "Số trang")
+                                {
+
+                                    if (!string.IsNullOrEmpty(infor.SelectSingleNode("./td").InnerText))
+                                    {
+                                        if (!string.IsNullOrEmpty(infor.SelectSingleNode("./td").InnerText.Trim()))
+                                        {
+                                            numberOfPages = Convert.ToInt32(infor.SelectSingleNode("./td").InnerText.Trim());
+                                        }
+                                    }
+                                }
+                                else if (thNode.InnerText.Trim() == "Người Dịch")
+                                {
+                                    translator = infor.SelectSingleNode("./td").InnerText.Trim();
+                                }
+
+                            }
                         }
 
 
-
+                        string productDesc = "";
+                        if (productHtml.DocumentNode.SelectSingleNode(".//div[@id='desc_content']") != null)
+                        {
+                            productDesc = HtmlEntity.DeEntitize(productHtml.DocumentNode.SelectSingleNode(".//div[@id='desc_content']").InnerText.Trim());
+                        }
                         using (SqlConnection con = new SqlConnection(sqlconnectStr))
                         {
                             con.Open();
 
-                            string checkExistCmd = $"Select count(*) from Book where BookName ={productName}";
+                            string checkExistCmd = "Select count(*) from Book where BookName = @BookName";
+
                             using (SqlCommand cmd = new SqlCommand(checkExistCmd, con))
                             {
-
+                                cmd.Parameters.AddWithValue("@BookName", productName);
                                 int count = (int)cmd.ExecuteScalar();
                                 if (count > 0)
                                 {
-                                    Console.WriteLine("Sản phẩm đã tồn tại.");
                                     continue;
                                 }
                                 else
                                 {
-                                    Guid productId = Guid.NewGuid();
-                                    string addBookCmd = $"Insert into Book ([Id] ,[BookName] ,[BookPrice],[BookWeight],[BookSupplier] ,[BookRating]           ,[BookInventoryQuantity]        ,[BookSold]          ,[BookDescription]          ,[CategoryLevelOneId]           ,[CategoryLevelTwoId]    ,[Author]           ,[Size]          ,[Language]         ,[NumberOfPages]           ,[CoverType]           ,[Age]           ,[PublicationYear]          ,[Translator]          ,[Description]) values ({productId}, {productName}, {price}, {} )";
 
-                                    using (SqlCommand cmd = new SqlCommand())
+                                    string addBookCmd = "Insert into Book ([Id] ,[BookName] ,[BookPrice],[BookWeight],[BookSupplier],[BookDescription], [CategoryLevelOneId], [CategoryLevelTwoId], [Author],[Size]   ,[Language]         ,[NumberOfPages]           ,[CoverType]           ,[Age]           ,[PublicationYear], [Translator]) values (@Id, @BookName, @BookPrice , @BookWeight, @BookSupplier, @BookDescription, @CategoryLevelOneId, @CategoryLevelTwoId, @Author, @Size, @Language, @NumberOfPages, @CoverType, @Age, @PublicationYear, @Translator)";
+
+                                    string addImageCmd = "Insert into BookImage([product_image_id], [product_id], [product_image_url]) values(@product_image_id, @product_id, @product_image_url)";
+
+                                    using (SqlCommand sqlCommand = new SqlCommand(addBookCmd, con))
+                                    {
+                                        sqlCommand.Parameters.AddWithValue("@Id", productId);
+                                        sqlCommand.Parameters.AddWithValue("@BookName", productName);
+                                        sqlCommand.Parameters.AddWithValue("@BookPrice", price);
+                                        sqlCommand.Parameters.AddWithValue("@BookWeight", productWeight);
+                                        sqlCommand.Parameters.AddWithValue("@BookSupplier", supplier);
+                                        sqlCommand.Parameters.AddWithValue("@BookDescription", productDesc);
+                                        sqlCommand.Parameters.AddWithValue("@CategoryLevelOneId", categoryLevel1Id);
+                                        sqlCommand.Parameters.AddWithValue("@CategoryLevelTwoId", categoryLevel2Id);
+                                        sqlCommand.Parameters.AddWithValue("@Author", author);
+                                        sqlCommand.Parameters.AddWithValue("@Size", size);
+                                        sqlCommand.Parameters.AddWithValue("@Language", language);
+                                        sqlCommand.Parameters.AddWithValue("@NumberOfPages", numberOfPages);
+                                        sqlCommand.Parameters.AddWithValue("@CoverType", coverType);
+                                        sqlCommand.Parameters.AddWithValue("@Age", age);
+                                        sqlCommand.Parameters.AddWithValue("@PublicationYear", publicationYear);
+                                        sqlCommand.Parameters.AddWithValue("@Translator", translator);
+
+                                        sqlCommand.ExecuteNonQuery();
+                                    }
+
+                                    foreach (var imgUrl in imgUrls)
+                                    {
+                                        using (SqlCommand sqlCommandImage = new SqlCommand(addImageCmd, con))
+                                        {
+                                            Guid productImageId = Guid.NewGuid();
+                                            sqlCommandImage.Parameters.AddWithValue("@product_image_id", productImageId);
+                                            sqlCommandImage.Parameters.AddWithValue("@product_id", productId);
+                                            sqlCommandImage.Parameters.AddWithValue("@product_image_url", imgUrl);
+
+                                            sqlCommandImage.ExecuteNonQuery();
+                                        }
+                                    }
+
                                 }
                             }
+                            con.Close();
                         }
+
+
 
                     }
                 }
             }
-
         }
 
         private static void GetCategoryData()
